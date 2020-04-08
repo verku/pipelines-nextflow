@@ -66,7 +66,7 @@ NBIS
  StringTie parameters (enabled: ${!params.skip_hisat2})
      stringtie_options          : ${params.stringtie_options}
 
- Trinity parameters
+ Trinity parameters (enabled: ${!params.skip_trinity})
      jaccard_clip               : ${params.jaccard_clip}
 
  MultiQC parameters
