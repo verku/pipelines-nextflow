@@ -53,10 +53,10 @@ NBIS
      trimmer                    : ${params.trimmer}
      max_intron_length          : ${params.max_intron_length}
 
- Fastp parameters (enabled: ${params.trimmer == trimming_tools[0]})
+ Fastp parameters (enabled: ${params.trimmer.equals(trimming_tools[0])})
      fastp_options              : ${params.fastp_options}
 
- Trimmomatic parameters (enabled: ${params.trimmer == trimming_tools[1]})
+ Trimmomatic parameters (enabled: ${params.trimmer.equals(trimming_tools[1])})
      trimmomatic_adapter_path   : ${params.trimmomatic_adapter_path}
      trimmomatic_clip_options   : ${params.trimmomatic_clip_options}
 
