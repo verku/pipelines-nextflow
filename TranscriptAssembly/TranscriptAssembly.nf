@@ -15,6 +15,7 @@ params.outdir = "results"
 trimming_tools = [ 'fastp', 'trimmomatic' ]
 params.skip_trimming = false
 params.trimmer = 'fastp'
+params.max_intron_length = 10000
 
 params.fastp_options = ' -Q -L'
 
@@ -24,6 +25,8 @@ params.trimmomatic_clip_options = 'LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLE
 params.hisat2_options = ''
 
 params.stringtie_options = ''
+
+params.jaccard_clip = false
 
 params.multiqc_config = "$baseDir/config/multiqc_conf.yml"
 
@@ -46,6 +49,7 @@ NBIS
      outdir                     : ${params.outdir}
      skip_trimming              : ${params.skip_trimming}
      trimmer                    : ${params.trimmer}
+     max_intron_length          : ${params.max_intron_length}
 
  Fastp parameters
      fastp_options              : ${params.fastp_options}
@@ -59,6 +63,9 @@ NBIS
 
  StringTie parameters
      stringtie_options          : ${params.stringtie_options}
+
+ Trinity parameters
+     jaccard_clip               : ${params.jaccard_clip}
 
  MultiQC parameters
      multiqc_config             : ${params.multiqc_config}
@@ -264,6 +271,41 @@ process stringtie {
         -p ${task.cpus} ${params.stringtie_options}
     """
 
+}
+
+process trinity {
+
+    tag "$sample"
+    publishDir "${params.outdir}/Trinity", mode: 'copy'
+
+    input:
+    tuple val(sample), path(reads)
+
+    output:
+    path "${sample}_trinity/${sample}-transcripts.gtf"
+
+    script:
+    max_mem = task.memory ? "${task.memory.toGiga() - 1}G" : "${task.cpus * 6}G"
+    trinity_opts = params.jaccard_clip ? "--jacard_clip" : ''
+    trinity_opts = trinity_opts + params.max_intron_length ? " --max_intron_length ${params.max_intron_length}" : ''
+    if (params.single_end){
+        """
+        Trinity --seqType fq --single ${reads} \\
+            --CPU ${task.cpus} \\
+            --max_memory $max_mem \\
+            --output ${sample}_trinity \\
+            --SS_lib_type F \\
+            $trinity_opts
+        """
+    } else {
+        """
+        Trinity --seqType fq --left ${reads[0]} --right ${reads[1]} \\
+            --CPU ${task.cpus} \\
+            --max_memory $max_mem \\
+            --output ${sample}_trinity \\
+            $trinity_opts
+        """
+    }
 }
 
 process multiqc {
