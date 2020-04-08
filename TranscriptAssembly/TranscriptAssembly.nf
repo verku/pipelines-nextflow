@@ -22,10 +22,12 @@ params.fastp_options = ' -Q -L'
 params.trimmomatic_adapter_path = '/path/to/trimmomatic/adapters.fasta'
 params.trimmomatic_clip_options = 'LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36'
 
+params.skip_hisat2 = false
 params.hisat2_options = ''
 
 params.stringtie_options = ''
 
+params.skip_trinity = false
 params.jaccard_clip = false
 
 params.multiqc_config = "$baseDir/config/multiqc_conf.yml"
@@ -51,17 +53,17 @@ NBIS
      trimmer                    : ${params.trimmer}
      max_intron_length          : ${params.max_intron_length}
 
- Fastp parameters
+ Fastp parameters (enabled: ${params.trimmer == trimming_tools[0]})
      fastp_options              : ${params.fastp_options}
 
- Trimmomatic parameters
+ Trimmomatic parameters (enabled: ${params.trimmer == trimming_tools[1]})
      trimmomatic_adapter_path   : ${params.trimmomatic_adapter_path}
      trimmomatic_clip_options   : ${params.trimmomatic_clip_options}
 
- Hisat2 parameters
+ Hisat2 parameters (enabled: ${!params.skip_hisat2})
      hisat2_options             : ${params.hisat2_options}
 
- StringTie parameters
+ StringTie parameters (enabled: ${!params.skip_hisat2})
      stringtie_options          : ${params.stringtie_options}
 
  Trinity parameters
@@ -77,6 +79,10 @@ if( !params.skip_trimming && !(params.trimmer in trimming_tools) ){
 }
 if( !params.skip_trimming && params.trimmer == 'trimmomatic' && !file(params.trimmomatic_adapter_path).exists() ){
     exit 1, "The adapter file '${params.trimmomatic_adapter_path}' does not exist!\n"
+}
+
+if (params.skip_hisat2 && params.skip_trinity) {
+    exit 1, "Hisat2 and Trinity were both disabled. Please enable one to generate transcripts.\n"
 }
 
 workflow {
@@ -115,6 +121,7 @@ workflow transcript_assembly {
         }
         hisat2(trimmed_reads,hisat2_index.out.collect())
         stringtie(hisat2.out[0])
+        trinity(trimmed_reads)
         fastqc.out.mix(trimming_logs).mix(hisat2.out[2]).set {logs}
         multiqc(logs.collect(),params.multiqc_config)
 
@@ -214,6 +221,9 @@ process hisat2_index {
     output:
     path('*.ht2')
 
+    when:
+    !params.skip_hisat2
+
     script:
     """
     hisat2-build -p ${task.cpus} $genome_fasta ${genome_fasta.baseName}.hisat2_index
@@ -233,6 +243,9 @@ process hisat2 {
     path "${sample}_sorted.bam"
     path "${sample}_splicesite.txt"
     path "*hisat2-summary.txt"
+
+    when:
+    !params.skip_hisat2
 
     script:
     index_basename = hisat2_index_files[0].toString() - ~/.\d.ht2l?/
@@ -265,6 +278,9 @@ process stringtie {
     output:
     path "${bam.baseName}-transcripts.gtf"
 
+    when:
+    !params.skip_hisat2
+
     script:
     """
     stringtie $bam -l ${bam.baseName} -o ${bam.baseName}-transcripts.gtf \\
@@ -283,6 +299,9 @@ process trinity {
 
     output:
     path "${sample}_trinity/${sample}-transcripts.gtf"
+
+    when:
+    !params.skip_trinity
 
     script:
     max_mem = task.memory ? "${task.memory.toGiga() - 1}G" : "${task.cpus * 6}G"
