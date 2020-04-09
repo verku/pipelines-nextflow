@@ -22,9 +22,9 @@ params.fastp_options = ' -Q -L'
 params.trimmomatic_adapter_path = '/path/to/trimmomatic/adapters.fasta'
 params.trimmomatic_clip_options = 'LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36'
 
-params.skip_hisat2 = false
 params.hisat2_options = ''
 
+params.skip_stringtie = false
 params.stringtie_options = ''
 
 params.skip_trinity = false
@@ -60,10 +60,10 @@ NBIS
      trimmomatic_adapter_path   : ${params.trimmomatic_adapter_path}
      trimmomatic_clip_options   : ${params.trimmomatic_clip_options}
 
- Hisat2 parameters (enabled: ${!params.skip_hisat2})
+ Hisat2 parameters
      hisat2_options             : ${params.hisat2_options}
 
- StringTie parameters (enabled: ${!params.skip_hisat2})
+ StringTie parameters (enabled: ${!params.skip_stringtie})
      stringtie_options          : ${params.stringtie_options}
 
  Trinity parameters (enabled: ${!params.skip_trinity})
@@ -81,8 +81,8 @@ if( !params.skip_trimming && params.trimmer == 'trimmomatic' && !file(params.tri
     exit 1, "The adapter file '${params.trimmomatic_adapter_path}' does not exist!\n"
 }
 
-if (params.skip_hisat2 && params.skip_trinity) {
-    exit 1, "Hisat2 and Trinity were both disabled. Please enable one to generate transcripts.\n"
+if (params.skip_stringtie && params.skip_trinity) {
+    exit 1, "Stringtie and Trinity were both disabled. Please enable one to generate transcripts.\n"
 }
 
 workflow {
@@ -121,7 +121,7 @@ workflow transcript_assembly {
         }
         hisat2(trimmed_reads,hisat2_index.out.collect())
         stringtie(hisat2.out[0])
-        trinity(trimmed_reads)
+        trinity(hisat2.out[0])
         fastqc.out.mix(trimming_logs).mix(hisat2.out[2]).set {logs}
         multiqc(logs.collect(),params.multiqc_config)
 
@@ -244,9 +244,6 @@ process hisat2 {
     path "${sample}_splicesite.txt"
     path "*hisat2-summary.txt"
 
-    when:
-    !params.skip_hisat2
-
     script:
     index_basename = hisat2_index_files[0].toString() - ~/.\d.ht2l?/
     if (params.single_end){
@@ -279,7 +276,7 @@ process stringtie {
     path "${bam.baseName}-transcripts.gtf"
 
     when:
-    !params.skip_hisat2
+    !params.skip_stringtie
 
     script:
     """
@@ -295,36 +292,25 @@ process trinity {
     publishDir "${params.outdir}/Trinity", mode: 'copy'
 
     input:
-    tuple val(sample), path(reads)
+    path alignment
 
     output:
-    path "${sample}_trinity/${sample}-transcripts.gtf"
+    path "${alignment.baseName}_trinity/Trinity-GG.fasta"
 
     when:
     !params.skip_trinity
 
     script:
     max_mem = task.memory ? "${task.memory.toGiga() - 1}G" : "${task.cpus * 6}G"
-    trinity_opts = params.jaccard_clip ? "--jacard_clip" : ''
-    trinity_opts = trinity_opts + params.max_intron_length ? " --max_intron_length ${params.max_intron_length}" : ''
-    if (params.single_end){
-        """
-        Trinity --seqType fq --single ${reads} \\
-            --CPU ${task.cpus} \\
-            --max_memory $max_mem \\
-            --output ${sample}_trinity \\
-            --SS_lib_type F \\
-            $trinity_opts
-        """
-    } else {
-        """
-        Trinity --seqType fq --left ${reads[0]} --right ${reads[1]} \\
-            --CPU ${task.cpus} \\
-            --max_memory $max_mem \\
-            --output ${sample}_trinity \\
-            $trinity_opts
-        """
-    }
+    trinity_opts = "--genome_guided_max_intron ${params.max_intron_length}"
+    trinity_opts = trinity_opts + params.jaccard_clip ? " --jacard_clip" : ''
+    """
+    Trinity --genome_guided_bam $alignment \\
+        --CPU ${task.cpus} \\
+        --max_memory $max_mem \\
+        --output ${alignment.baseName}_trinity \\
+        $trinity_opts
+    """
 }
 
 process multiqc {
